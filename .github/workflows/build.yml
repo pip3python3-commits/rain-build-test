@@ -1,19 +1,35 @@
 name: build-test
 on:
   workflow_dispatch:
+    inputs:
+      pkgbuild_b64:
+        description: "PKGBUILD file, base64 encoded"
+        required: true
+        type: string
+      cpu_flags:
+        description: "CPU flags, e.g. -march=skylake -mtune=skylake"
+        required: false
+        default: ""
+        type: string
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Write the PKGBUILD from the input
+        env:
+          PKGBUILD_B64: ${{ inputs.pkgbuild_b64 }}
+        run: echo "$PKGBUILD_B64" | base64 -d > PKGBUILD
       - name: Build in Arch container
+        env:
+          CPU_FLAGS: ${{ inputs.cpu_flags }}
         run: |
-          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work archlinux:latest bash -c '
+          docker run --rm -e CPU_FLAGS -v "$GITHUB_WORKSPACE:/work" -w /work archlinux:latest bash -c '
             pacman -Syu --noconfirm base-devel sudo
             useradd -m builder
             echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
             chown -R builder /work
-            su builder -c "makepkg -s --noconfirm"
+            sudo -u builder env CFLAGS="$CPU_FLAGS" CXXFLAGS="$CPU_FLAGS" makepkg -s --noconfirm
             sha256sum /work/*.pkg.tar.zst > /work/sha256sums.txt
           '
       - uses: actions/upload-artifact@v4
